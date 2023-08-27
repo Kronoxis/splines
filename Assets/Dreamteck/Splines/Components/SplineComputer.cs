@@ -1657,6 +1657,113 @@ namespace Dreamteck.Splines
             return hasHit;
         }
 
+        private struct Segment
+        {
+            public double from;
+            public double to;
+            public Vector3 start;
+            public Vector3 end;
+        }
+
+        /// <summary>
+        /// Divide the spline into segments
+        /// </summary>
+        /// <param name="resolution">Resolution multiplier for precision [0-1] default: 1.0</param>
+        /// <param name="from">Intersect from [0-1] default 0.0</param>
+        /// <param name="to">Intersect to [0-1] default 1.0</param>
+        /// <returns>List of segments, defined as start percent, start position and end position</returns>
+        private List<Segment> GetSegments(double resolution = 1.0, double from = 0.0, double to = 1.0)
+        {
+            double percent = from;
+            Vector3 fromPos = EvaluatePosition(percent);
+            List<Segment> segments = new List<Segment>();
+            while (true)
+            {
+                double prevPercent = percent;
+                percent = DMath.Move(percent, to, moveStep / resolution);
+                Vector3 toPos = EvaluatePosition(percent);
+                segments.Add(new Segment { from = prevPercent, to = percent, start = fromPos, end = toPos });
+                fromPos = toPos;
+                if (DMath.Abs(percent - to) < 0.000001d) break;
+            }
+            return segments;
+        }
+
+        /// <summary>
+        /// Finds the first self-intersection
+        /// </summary>
+        /// <param name="intersectionA">Intersection point in world space on the spline closest to <paramref name="from"/></param>
+        /// <param name="percentA">Percent along the spline closest to <paramref name="from"/></param>
+        /// <param name="intersectionB">Intersection point in world space on the spline closest to <paramref name="to"/></param>
+        /// <param name="percentB">Percent along the spline closest to <paramref name="to"/></param>
+        /// <param name="resolution">Resolution multiplier for precision [0-1] default: 1.0</param>
+        /// <param name="from">Intersect from [0-1] default 0.0</param>
+        /// <param name="to">Intersect to [0-1] default 1.0</param>
+        /// <param name="tolerance">Maximum allowed distance. default 0.001f</param>
+        /// <returns>Whether an intersection was found</returns>
+        public bool Intersect(out Vector3 intersectionA, out double percentA, out Vector3 intersectionB, out double percentB, double resolution = 1.0, double from = 0.0, double to = 1.0, float tolerance = 0.001f)
+        {
+            resolution = DMath.Clamp01(resolution);
+            Spline.FormatFromTo(ref from, ref to, false);
+            var segments = GetSegments(resolution, from, to);
+            LinearAlgebraUtility.Intersection intersect;
+            for (int i = 0; i < segments.Count; i++)
+            {
+                for (int j = i + 1; j < segments.Count; j++)
+                {
+                    if (LinearAlgebraUtility.LineLineIntersect(segments[i].start, segments[i].end, segments[j].start, segments[j].end, out intersect, tolerance))
+                    {
+                        intersectionA = intersect.pointA;
+                        percentA = DMath.Lerp(segments[i].from, segments[i].to, intersect.percentA);
+                        intersectionB = intersect.pointB;
+                        percentB = DMath.Lerp(segments[j].from, segments[j].to, intersect.percentB);
+                        return true;
+                    }
+                }
+            }
+            intersectionA = intersectionB = Vector3.zero;
+            percentA = percentB = 0d;
+            return false;
+        }
+
+        /// <summary>
+        /// Finds all self-intersections. Order is not guaranteed
+        /// </summary>
+        /// <param name="intersections">Intersection points in world space on the spline</param>
+        /// <param name="percents">Percents along the spline</param>
+        /// <param name="resolution">Resolution multiplier for precision [0-1] default: 1.0</param>
+        /// <param name="from">Intersect from [0-1] default 0.0</param>
+        /// <param name="to">Intersect to [0-1] default 1.0</param>
+        /// <param name="tolerance">Maximum allowed distance. default 0.001f</param>
+        /// <returns>Whether any intersections were found</returns>
+        public bool IntersectAll(out Vector3[] intersections, out double[] percents, double resolution = 1.0, double from = 0.0, double to = 1.0, float tolerance = 0.001f)
+        {
+            resolution = DMath.Clamp01(resolution);
+            Spline.FormatFromTo(ref from, ref to, false);
+            var segments = GetSegments(resolution, from, to);
+            List<Vector3> intersectionList = new List<Vector3>();
+            List<double> percentList = new List<double>();
+            bool hasIntersection = false;
+            LinearAlgebraUtility.Intersection intersect;
+            for (int i = 0; i < segments.Count; i++)
+            {
+                for (int j = i + 1; j < segments.Count; j++)
+                {
+                    if (LinearAlgebraUtility.LineLineIntersect(segments[i].start, segments[i].end, segments[j].start, segments[j].end, out intersect, tolerance))
+                    {
+                        hasIntersection = true;
+                        intersectionList.Add(intersect.pointA);
+                        percentList.Add(DMath.Lerp(segments[i].from, segments[i].to, intersect.percentA));
+                        intersectionList.Add(intersect.pointB);
+                        percentList.Add(DMath.Lerp(segments[j].from, segments[j].to, intersect.percentB));
+                    }
+                }
+            }
+            intersections = intersectionList.ToArray();
+            percents = percentList.ToArray();
+            return hasIntersection;
+        }
+
         public TriggerGroup AddTriggerGroup()
         {
             TriggerGroup newGroup = new TriggerGroup();
