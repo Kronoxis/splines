@@ -650,6 +650,42 @@ namespace Dreamteck.Splines {
             CalculatePositionAndTangent(doubleIndex - pointIndex, pointIndex, ref position, ref tangent);
         }
 
+        public float EvaluateCurvature(double percent)
+        {
+            if (points.Length == 0)
+            {
+                return 0;
+            }
+
+            if (points.Length == 1)
+            {
+                return 0;
+            }
+
+            percent = DMath.Clamp01(percent);
+            double doubleIndex = (points.Length - 1) * percent;
+            if (closed)
+            {
+                doubleIndex = points.Length * percent;
+            }
+            int pointIndex = DMath.FloorInt(doubleIndex);
+            if (type == Type.Bezier)
+            {
+                pointIndex = Mathf.Clamp(pointIndex, 0, Mathf.Max(points.Length - 1, 0));
+            }
+
+            Vector3 tangent = Vector3.zero;
+            Vector3 acceleration = Vector3.zero;
+            CalculateTangent(ref tangent, percent, pointIndex);
+            CalculateAcceleration(ref acceleration, percent, pointIndex);
+
+            // See https://en.wikipedia.org/wiki/Curvature#General_expressions for formula
+            // Note that this is an unsigned curvature, so it gives no indication on what
+            // direction the curvature is going. I haven't found a way to turn this into
+            // signed curvature yet.
+            return Vector3.Cross(tangent, acceleration).magnitude / Mathf.Pow(tangent.magnitude, 3);
+        }
+
         //Get closest point in spline segment. Used for projection
         private double GetClosestPoint(int iterations, Vector3 point, double start, double end, int slices)
         {
@@ -865,6 +901,34 @@ namespace Dreamteck.Splines {
             }
         }
 
+        private void CalculateAcceleration(ref Vector3 acceleration, double percent, int pointIndex)
+        {
+            switch (type)
+            {
+                case Type.CatmullRom:
+                    // Copied from CalculateTangent, no idea if these functions calls are necessary
+                    ComputeCatPoints(pointIndex);
+                    if (_knotParametrization < 0.000001f)
+                    {
+                        CalculateCatmullRomAccelerationFast(ref acceleration, percent, pointIndex);
+                    }
+                    else
+                    {
+                        CalculateCatmullRomComponents(percent);
+                        CalculateCatmullRomAcceleration(ref acceleration, percent, pointIndex);
+                    }
+                    break;
+                case Type.Bezier:
+                    CalculateBezierAcceleration(ref acceleration, percent, pointIndex);
+                    break;
+                case Type.Linear:
+                    // Copied from CalculateTangent, no idea if these functions calls are necessary
+                    ComputeCatPoints(pointIndex);
+                    CalculateLinearAcceleration(ref acceleration, percent, pointIndex);
+                    break;
+            }
+        }
+
         private void CalculateLinearPosition(ref Vector3 position, double t, int i)
         {
             if (points.Length == 0)
@@ -886,6 +950,14 @@ namespace Dreamteck.Splines {
 
             if (linearAverageDirection) tangent = Vector3.Slerp(P[1] - P[0], P[2] - P[1], 0.5f);
             else tangent = P[2] - P[1];
+        }
+
+        private void CalculateLinearAcceleration(ref Vector3 acceleration, double t, int i)
+        {
+            // TODO: Get the derivative of the Linear Tangent
+            // I'm not sure what this value is supposed to represent for linear splines
+            // The curvature is probably 0 at all times, unless this is different for corners?
+            throw new System.NotImplementedException("TODO: Linear Acceleration");
         }
 
         private void CalculateBSplinePosition(ref Vector3 position, double time, int i)
@@ -923,14 +995,21 @@ namespace Dreamteck.Splines {
 
         private void CalculateBezierTangent(ref Vector3 tangent, double t, int i)
         {
-            if (points.Length > 0) tangent = points[0].tangent;
+            // I'm not entirely sure why the default tangent seems to mess up the curvature
+            // Using position yields a better result, but it doesn't make much sense to me.
+            if (points.Length > 0) tangent = points[0].position;
             else return;
             if (!closed && points.Length == 1) return;
             t = DMath.Clamp01(t);
             int it = i + 1;
             if (it >= points.Length)
             {
-                it = 0;
+                // Fix: Setting `it` to start of spline is not valid when the spline isn't closed
+                // For open splines, this causes the tangent for the last point to be completely wrong.
+                // Instead, we can simply return the point data similar to the default return value.
+                // Again, I use position here, but I'm not sure why.
+                if (closed) it = 0;
+                else { tangent = points[points.Length - 1].position; return; }
             }
             float ft = (float)t;
             float nt = 1f - ft;
@@ -941,6 +1020,26 @@ namespace Dreamteck.Splines {
                 6f * ft * nt * points[it].tangent + 
                 3f * ft * ft * points[it].position;
            
+        }
+
+        private void CalculateBezierAcceleration(ref Vector3 acceleration, double t, int i)
+        {
+            if (points.Length > 0) acceleration = Vector3.zero;
+            else return;
+            if (!closed && points.Length == 1) return;
+            t = DMath.Clamp01(t);
+            int it = i + 1;
+            if (it >= points.Length)
+            {
+                if (closed) it = 0;
+                else return;
+            }
+            float ft = (float)t;
+            // TODO: Optimise?
+            acceleration = (6 - 6 * ft) * points[i].position +
+                (-12 + 18 * ft) * points[i].tangent2 +
+                (6 - 18 * ft) * points[it].tangent +
+                (6 * ft) * points[it].position;
         }
 
         private void CalculateCatmullRomComponents(double t)
@@ -984,6 +1083,12 @@ namespace Dreamteck.Splines {
             tangent = (B2 - B1) / (t2 - t1) + (t2 - tf) / (t2 - t1) * B1p + (tf - t1) / (t2 - t1) * B2p;
         }
 
+        private void CalculateCatmullRomAcceleration(ref Vector3 acceleration, double t, int i)
+        {
+            // TODO: Get the derivative of the CatmullRom Tangent
+            throw new System.NotImplementedException("TODO: Catmull Rom Acceleration");
+        }
+
         private void CalculateCatmullRomPositionFast(ref Vector3 position, double t, int i)
         {
             float t1 = (float)t;
@@ -1016,6 +1121,12 @@ namespace Dreamteck.Splines {
                 + (-6 * t2 + 6 * t1) * P[2]
                 + (3 * t2 - 2 * t1) * (P[3] - P[1]) * 0.5f;
             }
+        }
+
+        private void CalculateCatmullRomAccelerationFast(ref Vector3 acceleration, double t, int i)
+        {
+            // TODO: Get the derivative of the CatmullRom fast Tangent
+            throw new System.NotImplementedException("TODO: Catmull Rom Acceleration Fast");
         }
 
         private void ComputeCatPoints(int i)

@@ -1105,6 +1105,19 @@ namespace Dreamteck.Splines
             }
         }
 
+        public Vector3 EvaluateTangent(double percent)
+        {
+            Vector3 tangent = Vector3.forward;
+            _spline.EvaluateTangent(percent, ref tangent);
+            tangent = TransformPoint(tangent);
+            return tangent;
+        }
+
+        public float EvaluateCurvature(double percent)
+        {
+            return _spline.EvaluateCurvature(percent);
+        }
+
         /// <summary>
         /// Same as Spline.Evaluate but the results are transformed by the computer's transform
         /// </summary>
