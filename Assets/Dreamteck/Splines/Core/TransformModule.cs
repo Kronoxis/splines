@@ -233,8 +233,8 @@ namespace Dreamteck.Splines
             input.position = GetPosition(input.position);
             if (!input.isKinematic)
             {
-#if UNITY_6000_OR_NEWER
-            input.linearVelocity = HandleVelocity(input.linearVelocity);
+#if UNITY_6000_0_OR_NEWER
+                input.linearVelocity = HandleVelocity(input.linearVelocity);
 #else
                 input.velocity = HandleVelocity(input.velocity);
 #endif
