@@ -194,11 +194,7 @@ namespace Dreamteck.Splines
 #endif
             input.transform.localScale = GetScale(input.transform.localScale);
             input.MovePosition(GetPosition(input.position));
-#if UNITY_6000_0_OR_NEWER
-            if (input.bodyType != RigidbodyType2D.Kinematic)
-#else
             if (!input.isKinematic)
-#endif
             {
 #if UNITY_6000_0_OR_NEWER
                 input.linearVelocity = HandleVelocity(input.linearVelocity);
@@ -235,7 +231,11 @@ namespace Dreamteck.Splines
 #endif
             input.transform.localScale = GetScale(input.transform.localScale);
             input.position = GetPosition(input.position);
+#if UNITY_6000_0_OR_NEWER
+            if (input.bodyType != RigidbodyType2D.Kinematic)
+#else
             if (!input.isKinematic)
+#endif
             {
 #if UNITY_6000_0_OR_NEWER
                 input.linearVelocity = HandleVelocity(input.linearVelocity);
